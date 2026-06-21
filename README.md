@@ -26,10 +26,10 @@ During the COVID-19 crash, Minimum Variance fell only 13.8% peak to trough, vers
 ## Methodology
 
 
-Universe: 12 Nordic large caps across six sectors (industrials, energy, financials, healthcare, consumer staples, technology, seafood), deliberately diversified beyond the single-sector universe used in a prior M&A screening project.
-Data: Monthly returns, 2015-2024, pulled live from Yahoo Finance via tidyquant. Benchmark is the iShares MSCI Norway ETF (EWN), used as a proxy since OSEBX/OBX were not available through Yahoo Finance.
-Constraints: Long only, fully invested, maximum 20% per stock — chosen to reflect a realistic fund mandate.
-Out-of-sample test: Weights estimated on 2015-2019 data only, then applied without modification to 2020-2024 returns, isolating the effect of estimation error.
+- **Universe:** 12 Nordic large caps across six sectors (industrials, energy, financials, healthcare, consumer staples, technology, seafood), deliberately diversified beyond the single-sector universe used in a prior M&A screening project.
+- **Data:** Monthly returns, 2015-2024, pulled live from Yahoo Finance via tidyquant. Benchmark is the iShares MSCI Norway ETF (EWN), used as a proxy since OSEBX/OBX were not available through Yahoo Finance.
+- **Constraints:** Long only, fully invested, maximum 20% per stock — chosen to reflect a realistic fund mandate.
+- **Out-of-sample test:** Weights estimated on 2015-2019 data only, then applied without modification to 2020-2024 returns, isolating the effect of estimation error.
 
 
 
