@@ -1,0 +1,319 @@
+---
+title: "Nordic Portfolio Optimisation and Out-of-Sample Performance"
+subtitle: "Testing the Markowitz Efficient Frontier"
+author: "Ari Shareef Omar"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(ggplot2)
+library(tidyquant)
+library(lubridate)
+library(PortfolioAnalytics)
+library(ROI)
+library(ROI.plugin.quadprog)
+library(ROI.plugin.glpk)
+library(tidyr)
+library(xts)
+library(PerformanceAnalytics)
+library(corrplot)
+library(knitr)
+library(scales)
+
+# Stock universe
+tickers <- c("VEI.OL", "AFG.OL", "KOG.OL",
+             "EQNR.OL", "AKRBP.OL", "DNB.OL",
+             "STB.OL", "NOVO-B.CO", "ORK.OL",
+             "NOD.OL", "MOWI.OL", "SALM.OL")
+
+# Pull prices and build monthly returns
+prices <- tq_get(tickers, from = "2015-01-01", to = "2024-12-31")
+
+returns <- prices %>%
+  group_by(symbol) %>%
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = "monthly",
+               col_rename = "return")
+
+returns_wide <- returns %>%
+  pivot_wider(names_from = symbol, values_from = return) %>%
+  na.omit()
+
+returns_xts <- xts(returns_wide[, -1], order.by = returns_wide$date)
+
+# Portfolio specification and constraints
+portfolio <- portfolio.spec(assets = colnames(returns_xts))
+portfolio <- add.constraint(portfolio, type = "long_only")
+portfolio <- add.constraint(portfolio, type = "full_investment")
+portfolio <- add.constraint(portfolio, type = "box", min = 0, max = 0.20)
+
+portfolio_minvar <- add.objective(portfolio, type = "risk", name = "var")
+
+portfolio_maxsharpe <- add.objective(portfolio, type = "return", name = "mean")
+portfolio_maxsharpe <- add.objective(portfolio_maxsharpe, type = "risk", name = "StdDev")
+
+# Optimise on full period
+opt_minvar <- optimize.portfolio(returns_xts, portfolio_minvar, optimize_method = "ROI")
+opt_maxsharpe <- optimize.portfolio(returns_xts, portfolio_maxsharpe,
+                                    optimize_method = "ROI", maxSR = TRUE)
+
+weights_equal <- rep(1 / 12, 12)
+
+returns_minvar    <- Return.portfolio(returns_xts, weights = extractWeights(opt_minvar))
+returns_maxsharpe <- Return.portfolio(returns_xts, weights = extractWeights(opt_maxsharpe))
+returns_equal     <- Return.portfolio(returns_xts, weights = weights_equal)
+
+# Benchmark (EWN, proxy for Norwegian equity market)
+ob_prices <- tq_get("EWN", from = "2015-01-01", to = "2024-12-31")
+
+returns_benchmark <- ob_prices %>%
+  group_by(symbol) %>%
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = "monthly",
+               col_rename = "return")
+
+ob_returns_xts <- xts(returns_benchmark[, "return"], order.by = returns_benchmark$date)
+
+# Full period comparison
+all_returns <- merge(returns_minvar, returns_maxsharpe, returns_equal, ob_returns_xts)
+colnames(all_returns) <- c("Min Variance", "Max Sharpe", "Equal Weight", "Benchmark")
+all_returns_clean <- na.omit(all_returns)
+
+annualized_full <- as.data.frame(table.AnnualizedReturns(all_returns, Rf = 0.02 / 12))
+
+weights_table <- data.frame(
+  Stock = colnames(returns_xts),
+  Min_Variance = round(extractWeights(opt_minvar), 4),
+  Max_Sharpe = round(extractWeights(opt_maxsharpe), 4)
+)
+
+cumulative_returns <- data.frame(
+  date = index(all_returns_clean),
+  coredata(all_returns_clean)
+) %>%
+  mutate(
+    Min.Variance = cumprod(1 + Min.Variance) - 1,
+    Max.Sharpe   = cumprod(1 + Max.Sharpe) - 1,
+    Equal.Weight = cumprod(1 + Equal.Weight) - 1,
+    Benchmark    = cumprod(1 + Benchmark) - 1
+  )
+
+cumulative_long <- cumulative_returns %>%
+  pivot_longer(cols = -date, names_to = "portfolio", values_to = "cumulative_return")
+
+chart_full <- ggplot(cumulative_long, aes(x = date, y = cumulative_return, colour = portfolio)) +
+  geom_line(linewidth = 1) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(title = "Portfolio Cumulative Returns Over Time",
+       x = "Date", y = "Cumulative Return", color = "Portfolio Type")
+
+# Out-of-sample backtest
+in_sample  <- returns_xts["2015/2019"]
+out_sample <- returns_xts["2020/2024"]
+
+in_opt_minvar    <- optimize.portfolio(in_sample, portfolio_minvar, optimize_method = "ROI")
+in_opt_maxsharpe <- optimize.portfolio(in_sample, portfolio_maxsharpe,
+                                       optimize_method = "ROI", maxSR = TRUE)
+
+in_returns_minvar    <- Return.portfolio(in_sample, weights = extractWeights(in_opt_minvar))
+in_returns_maxsharpe <- Return.portfolio(in_sample, weights = extractWeights(in_opt_maxsharpe))
+in_returns_equal     <- Return.portfolio(in_sample, weights = weights_equal)
+
+out_returns_minvar    <- Return.portfolio(out_sample, weights = extractWeights(in_opt_minvar))
+out_returns_maxsharpe <- Return.portfolio(out_sample, weights = extractWeights(in_opt_maxsharpe))
+out_returns_equal     <- Return.portfolio(out_sample, weights = weights_equal)
+
+in_all_returns <- merge(in_returns_minvar, in_returns_maxsharpe, in_returns_equal)
+colnames(in_all_returns) <- c("Min Variance", "Max Sharpe", "Equal Weight")
+annualized_in <- as.data.frame(table.AnnualizedReturns(in_all_returns, Rf = 0.02 / 12))
+
+out_all_returns <- merge(out_returns_minvar, out_returns_maxsharpe, out_returns_equal)
+colnames(out_all_returns) <- c("Min Variance", "Max Sharpe", "Equal Weight")
+annualized_out <- as.data.frame(table.AnnualizedReturns(out_all_returns, Rf = 0.02 / 12))
+
+all_returns_out <- merge(out_returns_minvar, out_returns_equal, out_returns_maxsharpe,
+                         ob_returns_xts["2020/2024"])
+colnames(all_returns_out) <- c("Min Variance", "Equal Weight", "Max Sharpe", "Benchmark")
+all_returns_out_clean <- na.omit(all_returns_out)
+
+cumulative_returns_out <- data.frame(
+  date = index(all_returns_out_clean),
+  coredata(all_returns_out_clean)
+) %>%
+  mutate(
+    Min.Variance = cumprod(1 + Min.Variance) - 1,
+    Equal.Weight = cumprod(1 + Equal.Weight) - 1,
+    Max.Sharpe   = cumprod(1 + Max.Sharpe) - 1,
+    Benchmark    = cumprod(1 + Benchmark) - 1
+  )
+
+cumulative_long_out <- cumulative_returns_out %>%
+  pivot_longer(cols = -date, names_to = "portfolio", values_to = "cumulative_return")
+
+chart_out <- ggplot(cumulative_long_out, aes(x = date, y = cumulative_return, colour = portfolio)) +
+  geom_line(linewidth = 1) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(title = "Out-of-Sample Portfolio Performance (2020-2024)",
+       x = "Date", y = "Cumulative Return", color = "Portfolio Type")
+
+# Correlation matrix
+correlation_matrix <- cor(returns_xts)
+
+# Drawdowns
+drawdowns_minvar    <- table.Drawdowns(returns_minvar, top = 3)
+drawdowns_maxsharpe <- table.Drawdowns(returns_maxsharpe, top = 3)
+drawdowns_equal     <- table.Drawdowns(returns_equal, top = 3)
+drawdowns_benchmark <- table.Drawdowns(ob_returns_xts, top = 3)
+```
+
+# Executive Summary
+
+This project constructs and tests Nordic equity portfolios using mean-variance optimisation in R. Three portfolios, Minimum Variance, Maximum Sharpe, and Equal Weight, are built from a diversified 12-stock Nordic universe and compared against a market benchmark. All three substantially outperformed the benchmark over 2015-2024.
+
+However, an out-of-sample backtest reveals an important caveat: the Maximum Sharpe portfolio, which performed best when measured on the same data used to construct it, performed worst of the three when tested on unseen 2020-2024 data. This finding is the central result of the project and illustrates why portfolio optimisation results should always be tested out-of-sample before being trusted.
+
+# Methodology
+
+## Universe
+
+The portfolio universe consists of 12 Nordic listed companies, deliberately selected across six sectors: industrials (Veidekke, AF Gruppen, Kongsberg Gruppen), energy (Equinor, Aker BP), financials (DNB, Storebrand), healthcare (Novo Nordisk), consumer staples (Orkla), technology (Nordic Semiconductor), and seafood (Mowi, SalMar).
+
+The industrials names were carried over from a prior M&A screening project. That project's universe was limited to a single sector, which produces a portfolio with high internal correlation and limited diversification benefit. To address this, the universe was deliberately expanded across sectors for this project, since portfolio optimisation depends on combining assets that do not move together.
+
+## Data
+
+Daily adjusted closing prices were pulled from Yahoo Finance via the `tidyquant` package for the period January 2015 to December 2024. Prices were converted to monthly returns, since monthly data produces more stable volatility and correlation estimates than daily data, which is dominated by short-term noise. A small number of months were missing for most Norwegian-listed tickers, likely due to local exchange holidays, and were removed from the dataset.
+
+The benchmark used is the iShares MSCI Norway ETF (EWN), listed on the NYSE. This was used as a proxy for the Norwegian equity market, since the OSEBX and OBX indices were not available through Yahoo Finance. EWN is USD-denominated and tracks a broader MSCI Norway universe rather than the OSEBX specifically, a limitation revisited below.
+
+## Portfolio Construction
+
+Three portfolios were constructed using the `PortfolioAnalytics` package, alongside the benchmark:
+
+- **Minimum Variance** — minimises portfolio volatility, with no consideration of expected return.
+- **Maximum Sharpe** — maximises the ratio of expected return to volatility, using a 2% annual risk-free rate.
+- **Equal Weight** — allocates 1/12 to each of the 12 stocks, included as a naive benchmark against which the value of optimisation can be judged.
+
+All optimised portfolios were subject to three constraints intended to reflect realistic fund mandates: **long only** (no short selling), **full investment** (weights sum to 100%), and a **maximum position size of 20%** per stock, preventing concentration in any single name.
+
+## Out-of-Sample Testing
+
+A central aim of this project was to test whether portfolio optimisation produces results that hold up beyond the data used to construct it. The dataset was split into an in-sample period (2015-2019) and an out-of-sample period (2020-2024). Portfolio weights were calculated using only in-sample data, then applied without modification to out-of-sample returns.
+
+This design simulates the position of a real investor, who can only optimise using information available at the time of investment and has no knowledge of how the chosen weights will perform going forward. Comparing in-sample and out-of-sample performance for the same set of weights isolates the effect of estimation error, the extent to which the optimiser's results were a product of in-sample noise rather than a persistent, repeatable pattern.
+
+## Risk Analysis
+
+In addition to standard deviation and Sharpe ratio, a correlation matrix of monthly returns was calculated to assess diversification within the universe, and maximum drawdown was calculated for each portfolio to measure the depth and duration of the worst loss experienced over the period.
+
+# Results
+
+## Full Period Performance (2015-2024)
+
+```{r}
+kable(annualized_full, caption = "Annualised return, volatility, and Sharpe ratio, 2015-2024")
+```
+
+```{r, out.width="90%"}
+chart_full
+```
+
+All three constructed portfolios substantially outperformed the benchmark over the full period, both in absolute return and on a risk-adjusted basis. The Maximum Sharpe portfolio delivered the highest return and the highest Sharpe ratio, while the Minimum Variance portfolio delivered the lowest volatility, as designed.
+
+## Optimal Portfolio Weights
+
+```{r}
+kable(weights_table, caption = "Optimal weights, Minimum Variance vs Maximum Sharpe (full period)")
+```
+
+Both optimised portfolios converge on Novo Nordisk and Orkla as core holdings, each held at the 20% maximum. Aker BP receives a 0% allocation in the Minimum Variance portfolio, reflecting the higher volatility typical of oil exploration stocks.
+
+## In-Sample vs Out-of-Sample Performance
+
+```{r}
+kable(annualized_in, caption = "In-sample performance, 2015-2019")
+```
+
+```{r}
+kable(annualized_out, caption = "Out-of-sample performance, 2020-2024 (using in-sample weights)")
+```
+
+```{r, out.width="90%"}
+chart_out
+```
+
+This is the central finding of the project. In-sample, the Maximum Sharpe portfolio achieved the strongest performance of the three. Out-of-sample, using the identical weights, it became the weakest of the three constructed portfolios, tracking close to the benchmark for much of the period.
+
+By contrast, the Equal Weight and Minimum Variance portfolios held up well out-of-sample, remaining close to their in-sample risk-adjusted performance. This pattern is consistent with the well-documented problem of estimation error in expected returns: historical average returns are unstable predictors of future performance, while volatility and correlation, the only inputs to the Minimum Variance portfolio, are comparatively more stable over time.
+
+## Diversification and Correlation
+
+```{r, fig.width=8, fig.height=8}
+corrplot(correlation_matrix,
+         method = "color",
+         type = "upper",
+         addCoef.col = "black",
+         tl.col = "black",
+         tl.srt = 45)
+```
+
+The correlation matrix confirms sector clustering within the universe. Construction stocks (Veidekke, AF Gruppen), energy stocks (Equinor, Aker BP), and financials (DNB, Storebrand) each show correlations above 0.60 with their sector peers. Mowi and SalMar, both salmon farming companies, show the highest pairwise correlation in the matrix. Novo Nordisk shows near-zero correlation with every other holding, making it the most valuable diversifier in the portfolio.
+
+## Drawdown Analysis
+
+```{r}
+kable(drawdowns_minvar, caption = "Minimum Variance - worst drawdowns")
+```
+
+```{r}
+kable(drawdowns_maxsharpe, caption = "Maximum Sharpe - worst drawdowns")
+```
+
+```{r}
+kable(drawdowns_equal, caption = "Equal Weight - worst drawdowns")
+```
+
+```{r}
+kable(drawdowns_benchmark, caption = "Benchmark - worst drawdowns")
+```
+
+The COVID-19 crash (January-March 2020) was the worst drawdown period for every constructed portfolio, but its depth varied considerably, with the Minimum Variance portfolio falling far less than Maximum Sharpe or Equal Weight. The benchmark's worst drawdown was not the COVID crash but a much longer episode in 2021-2024, substantially deeper and longer than any drawdown experienced by the constructed portfolios.
+
+# Limitations
+
+**Survivorship bias.** All 12 companies in the universe are currently listed, established businesses. Companies that were delisted, acquired, or went bankrupt during the sample period are not represented, which likely inflates the historical returns observed across all portfolios, including the benchmark.
+
+**Small sample size.** A universe of 12 stocks means that the performance of any single holding, particularly an outlier such as Novo Nordisk over this period, can disproportionately influence portfolio-level results. A larger universe would reduce this sensitivity.
+
+**Estimation risk.** Expected returns, the central input to the Maximum Sharpe optimisation, are estimated from historical averages and are known to be unstable predictors of future returns. This is examined directly above, where the Maximum Sharpe portfolio's in-sample and out-of-sample performance are compared.
+
+**Benchmark proxy.** EWN was used in place of a direct OSEBX or OBX comparison due to data availability constraints, and is denominated in USD rather than NOK.
+
+**Transaction costs and rebalancing.** This analysis assumes weights are set once at the start of each period and does not account for transaction costs, taxes, or the costs of periodic rebalancing that a real portfolio would incur.
+
+# Conclusion
+
+This project demonstrates both the potential and the limitations of mean-variance portfolio optimisation. All three constructed portfolios outperformed a passive Nordic equity benchmark over 2015-2024, supporting the case for active portfolio construction within a diversified Nordic universe.
+
+However, the out-of-sample test shows that the headline result, the Maximum Sharpe portfolio's superior in-sample performance, does not survive contact with unseen data. The Minimum Variance and Equal Weight portfolios proved considerably more robust. This suggests that, within the constraints of this dataset, optimising on risk inputs alone, or not optimising at all, may be a more reliable approach than optimising on historical expected returns.
+
+# How to Run
+
+1. Clone or download this repository
+2. Open RStudio and navigate to the project folder
+3. Run `requirements.R` once to install all required packages
+4. Open `Report.Rmd` and click **Knit**
+
+The report pulls all data live from Yahoo Finance and runs the full analysis automatically. No separate script needs to be run first. Knitting takes a few minutes due to the data download and optimisation steps.
+
+# Author
+
+Ari Shareef Omar
+Finance student, BI Norwegian Business School
