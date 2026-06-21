@@ -35,12 +35,11 @@ Out-of-sample test: Weights estimated on 2015-2019 data only, then applied witho
 
 ## Limitations
 
-
-Survivorship bias — all 12 companies are currently listed; delisted or failed companies from the period are not represented.
-Small sample size — a 12-stock universe is sensitive to single-name outliers, particularly Novo Nordisk's outsized performance over this period.
-Estimation risk — directly demonstrated by the Maximum Sharpe portfolio's in-sample vs out-of-sample collapse.
-Benchmark proxy — EWN is USD-denominated and tracks a broader MSCI Norway universe rather than OSEBX directly.
-No transaction costs or rebalancing costs are modelled.
+- **Survivorship bias** — all 12 companies are currently listed; delisted or failed companies from the period are not represented.
+- **Small sample size** — a 12-stock universe is sensitive to single-name outliers, particularly Novo Nordisk's outsized performance over this period.
+- **Estimation risk** — directly demonstrated by the Maximum Sharpe portfolio's in-sample vs out-of-sample collapse.
+- **Benchmark proxy** — EWN is USD-denominated and tracks a broader MSCI Norway universe rather than OSEBX directly.
+- **No transaction costs or rebalancing costs** are modelled.
 
 
 
