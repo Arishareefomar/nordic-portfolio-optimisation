@@ -1,11 +1,11 @@
-## Nordic Portfolio Optimisation and Out-of-Sample Performance
+# Nordic Portfolio Optimisation and Out-of-Sample Performance
 
 This project constructs and tests Nordic equity portfolios using mean-variance optimisation in R. Three portfolios, Minimum Variance, Maximum Sharpe, and Equal Weight, are built from a diversified 12-stock Nordic universe and compared against a market benchmark, with results validated using an out-of-sample backtest.
 
 Built as part of my self-directed learning in quantitative finance and portfolio theory. Tools used: R, tidyquant, PortfolioAnalytics, PerformanceAnalytics, ggplot2, corrplot.
 
 
-# Key Findings
+## Key Findings
 
 **Full Period (2015-2024): all three portfolios beat the benchmark**
 The Maximum Sharpe portfolio delivered the strongest full-period performance, 23.0% annualised return with a Sharpe ratio of 1.33. Minimum Variance delivered 16.9% return at the lowest volatility of the three (12.1%), and Equal Weight delivered 19.3%. All three comfortably outperformed the benchmark, which returned 8.5% annually with a Sharpe ratio of just 0.33.
@@ -23,7 +23,7 @@ The correlation matrix confirms that stocks within the same sector move together
 During the COVID-19 crash, Minimum Variance fell only 13.8% peak to trough, versus 24.2% for Maximum Sharpe and 29.5% for Equal Weight. The benchmark's worst drawdown wasn't COVID at all, a 2021-2024 episode that took it down 41.3% over 33 months, far deeper and longer than anything the constructed portfolios experienced.
 
 
-# Methodology
+## Methodology
 
 
 Universe: 12 Nordic large caps across six sectors (industrials, energy, financials, healthcare, consumer staples, technology, seafood), deliberately diversified beyond the single-sector universe used in a prior M&A screening project.
@@ -33,7 +33,7 @@ Out-of-sample test: Weights estimated on 2015-2019 data only, then applied witho
 
 
 
-# Limitations
+## Limitations
 
 
 Survivorship bias — all 12 companies are currently listed; delisted or failed companies from the period are not represented.
@@ -44,7 +44,7 @@ No transaction costs or rebalancing costs are modelled.
 
 
 
-# How to Run
+## How to Run
 
 
 1. Clone or download this repository
@@ -56,7 +56,7 @@ No transaction costs or rebalancing costs are modelled.
 The report pulls all data live from Yahoo Finance and runs the entire analysis automatically, no separate script or saved files are required. Knitting takes a few minutes due to the data download and optimisation steps.
 
 
-# Author
+## Author
 
 Ari Shareef Omar
 Finance student, BI Norwegian Business School
